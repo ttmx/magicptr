@@ -1,0 +1,21 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add armv7-unknown-linux-musleabihf
+      - run: ./build.sh
+      - name: Package
+        run: |
+          mkdir magicptr
+          cp target/armv7-unknown-linux-musleabihf/release/magicptr install.sh README.md LICENSE magicptr/
+          tar -czf magicptr-${{ github.ref_name }}.tar.gz magicptr
+      - run: gh release create ${{ github.ref_name }} magicptr-${{ github.ref_name }}.tar.gz --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

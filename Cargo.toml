@@ -1,0 +1,18 @@
+[package]
+name = "magicptr"
+version = "0.1.0"
+edition = "2021"
+description = "Point and click on an Android TV box with an LG Magic Remote"
+license = "MIT"
+
+[dependencies]
+base64 = "0.22"
+libc = "0.2"
+rand = "0.8"
+rsa = { version = "0.9", features = ["pem"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"
