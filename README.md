@@ -13,6 +13,11 @@ pointer to the box over the network instead:
 
 The TV's own cursor is the pointer you see. Nothing is drawn by the box.
 
+![Hovering, scrolling and clicking on a Google TV box with the Magic Remote](docs/demo.gif)
+
+*Recorded on the TV itself. The TV's capture cannot see its cursor layer, so the cursor was
+added afterwards from the remote's logged positions, using the TV's own cursor image.*
+
 ## Status
 
 Tested on one setup only: an LG C9 (webOS 4.x) with a Xiaomi TV Box S 3rd gen
