@@ -30,8 +30,11 @@ const USAGE: &str = "usage: magicptr BOX_HOST[:PORT] WEBOS_APP_ID [KEY_FILE]
 
 static HELPER_DEX: &[u8] = include_bytes!("../helper/magicptr.dex");
 const HELPER_PATH: &str = "/data/local/tmp/magicptr.dex";
-/// `wm size` first, so the helper's `ready` is preceded by the box's screen size.
-const HELPER_COMMAND: &str = "exec:wm size; CLASSPATH=/data/local/tmp/magicptr.dex exec app_process / MagicPtr";
+/// Ends helpers left behind by connections that died without the box noticing (anchored, so the
+/// pattern does not match the shell running this), then prints the box's screen size ahead of
+/// the helper's `ready`.
+const HELPER_COMMAND: &str =
+    "exec:pkill -f '^app_process / MagicPtr'; wm size; CLASSPATH=/data/local/tmp/magicptr.dex exec app_process / MagicPtr";
 
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 /// Time constant with which a wheel notch is spread into a smooth scroll.
