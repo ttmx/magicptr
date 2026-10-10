@@ -1,0 +1,12 @@
+{
+    "id": "io.github.ttmx.magicptr",
+    "version": "0.0.0",
+    "vendor": "ttmx",
+    "type": "web",
+    "main": "index.html",
+    "title": "Magic Pointer",
+    "icon": "icon.png",
+    "largeIcon": "largeIcon.png",
+    "bgColor": "#14161c",
+    "resolution": "1920x1080"
+}

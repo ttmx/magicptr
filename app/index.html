@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Magic Pointer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Magic Pointer</h1>
+<p class="lead">Use this TV's Magic Remote to point and click on an Android box.</p>
+
+<section>
+  <h2>1. Which input is the box on?</h2>
+  <div id="inputs"></div>
+</section>
+
+<section>
+  <h2>2. What is the box's network address?</h2>
+  <p class="hint">Turn on network debugging in the box's developer options first. Its address is in its network settings.</p>
+  <div id="address-row" tabindex="0"><input id="address" type="text" placeholder="192.168.1.50" spellcheck="false" autocomplete="off"></div>
+</section>
+
+<section class="actions">
+  <button id="start">Save and start</button>
+  <button id="stop">Stop and turn off</button>
+</section>
+
+<section>
+  <h2 id="state">Checking…</h2>
+  <pre id="log"></pre>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

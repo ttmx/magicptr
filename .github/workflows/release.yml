@@ -10,12 +10,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add armv7-unknown-linux-musleabihf
+      - name: Check the tag matches the version
+        run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)" = "${{ github.ref_name }}"
       - run: ./build.sh
-      - name: Package
+      - run: ./package.sh
+      - name: Package the script install
         run: |
           mkdir magicptr
           cp target/armv7-unknown-linux-musleabihf/release/magicptr install.sh README.md LICENSE magicptr/
           tar -czf magicptr-${{ github.ref_name }}.tar.gz magicptr
-      - run: gh release create ${{ github.ref_name }} magicptr-${{ github.ref_name }}.tar.gz --generate-notes
+      - run: gh release create ${{ github.ref_name }} dist/*.ipk dist/*.manifest.json magicptr-${{ github.ref_name }}.tar.gz --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

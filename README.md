@@ -22,29 +22,38 @@ welcome.
 
 ## Requirements
 
-- An LG TV rooted with the [Homebrew Channel](https://www.webosbrew.org/), with SSH enabled.
+- An LG TV rooted with the [Homebrew Channel](https://www.webosbrew.org/).
 - An Android box on the same network with **network debugging** (ADB over TCP, port
   5555) turned on in its developer options. Boxes that only offer Android's "wireless
   debugging" with a pairing code and a changing port are not supported.
-- A computer with `ssh`, for the one-time install.
 
 Nothing needs installing on the box by hand, and it does not need root.
 
 ## Install
 
-1. Download the latest release and unpack it.
-2. Run the installer with the TV's address, the box's address and the number of the HDMI
-   input the box is on:
+### As a TV app
 
-   ```sh
-   ./install.sh 192.168.1.20 192.168.1.50 3
-   ```
-
+1. Download the `.ipk` from the latest release and install it on the TV, for example with
+   [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop).
+2. Open **Magic Pointer** on the TV, choose the input the box is on, enter the box's
+   address and press **Save and start**.
 3. Switch the TV to the box's input. The first time, the box asks whether to allow
    debugging from the TV: tick **Always allow** and accept.
 
-magicptr then starts with the TV. To change the box's address or input, run the
-installer again.
+magicptr then starts with the TV. Open the app again to change the settings, see its
+status, or turn it off.
+
+### With a script, over SSH
+
+For this the TV needs SSH enabled in the Homebrew Channel. Download and unpack the
+`.tar.gz` from the latest release, then run the installer with the TV's address, the
+box's address and the number of the HDMI input the box is on:
+
+```sh
+./install.sh 192.168.1.20 192.168.1.50 3
+```
+
+Then switch to the box's input and accept its debugging prompt, as in step 3 above.
 
 ## Troubleshooting
 
@@ -61,6 +70,8 @@ box's input anyway, switch input or restart the TV.
 
 ## Uninstall
 
+In the app, press **Stop and turn off**, then remove the app. After a script install:
+
 ```sh
 ssh root@TV 'kill $(cat /tmp/magicptr.pid); rm -r /home/root/magicptr /var/lib/webosbrew/init.d/magicptr'
 ```
@@ -76,8 +87,9 @@ default root password and consider turning its telnet server off.
 
 ## How it works
 
-`magicptr` is one static program on the TV. While the box's input is in the foreground
-it:
+`magicptr` is one static program on the TV, started at boot by a Homebrew Channel startup
+script. The app is only a settings screen that writes that script. While the box's input
+is in the foreground the program:
 
 1. takes exclusive hold of the Magic Remote's input device, so the TV does not react to
    clicks itself, and passes everything except the click, the wheel and Home back to the
@@ -94,8 +106,8 @@ Needs Rust with the `armv7-unknown-linux-musleabihf` target, a JDK and the Andro
 
 ```sh
 rustup target add armv7-unknown-linux-musleabihf
-./build.sh
-./install.sh TV_HOST BOX_HOST HDMI_INPUT_NUMBER
+./build.sh      # the program, in target/
+./package.sh    # the TV app, in dist/ (needs npx)
 ```
 
 `tools/` has two scripts that run on the TV, for porting to other models: `evcap.py`

@@ -1,0 +1,35 @@
+body {
+    margin: 0;
+    padding: 60px 120px;
+    background: #14161c;
+    color: #e8eaed;
+    font: 28px/1.4 "LG Smart UI", "Museo Sans", sans-serif;
+}
+h1 { margin: 0; font-size: 56px; font-weight: 600; }
+h2 { margin: 0 0 14px; font-size: 32px; font-weight: 600; }
+.lead { margin: 6px 0 36px; color: #9aa0a6; }
+.hint { margin: 0 0 14px; font-size: 24px; color: #9aa0a6; }
+section { margin-bottom: 34px; }
+
+button, input {
+    font: inherit;
+    color: inherit;
+    background: #262a33;
+    border: 3px solid transparent;
+    border-radius: 12px;
+    padding: 12px 28px;
+    margin-right: 16px;
+    outline: none;
+}
+input { width: 520px; }
+#address-row { display: inline-block; outline: none; }
+button:focus, input:focus, button:hover, #address-row:focus input { border-color: #fff; }
+button.chosen { background: #a50034; }
+.actions button:first-child { background: #a50034; }
+
+#log {
+    margin: 0;
+    font: 22px/1.4 monospace;
+    color: #9aa0a6;
+    white-space: pre-wrap;
+}
