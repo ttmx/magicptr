@@ -3,8 +3,8 @@
 //! Runs as root on the TV. While the box's HDMI input is in the foreground it takes over the
 //! remote's evdev node and injects pointer input on the box through a helper it installs and
 //! runs there over ADB (see helper/). The TV still gets everything but the click, the wheel
-//! and Home, passed on through a sibling remote device, so its cursor keeps working without
-//! its own UI reacting.
+//! and Home, passed on through the device of another remote slot, so its cursor keeps working
+//! without its own UI reacting.
 
 mod adb;
 
@@ -15,6 +15,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -42,6 +43,8 @@ const WHEEL_GLIDE: f64 = 0.07;
 const FRAME: Duration = Duration::from_millis(16);
 /// Holding Home this long opens the TV's home instead of the box's.
 const HOME_HOLD: Duration = Duration::from_millis(500);
+/// The main loop turns at least once a second; if it has not for this long, it is stuck.
+const STUCK_AFTER: Duration = Duration::from_secs(4);
 
 const EV_KEY: u16 = 1;
 const EV_REL: u16 = 2;
@@ -61,6 +64,9 @@ const EVIOCGRAB: u32 = 0x4004_4590;
 const EVIOCGABS: u32 = 0x8018_4540;
 /// The kernel's input_event as this process sees it: a timeval, then type, code and value.
 const EVENT_SIZE: usize = 2 * std::mem::size_of::<usize>() + 8;
+
+/// The foreground watcher's process, for the watchdog to end before it restarts us.
+static WATCHER: AtomicI32 = AtomicI32::new(0);
 
 #[macro_export]
 macro_rules! log {
@@ -244,6 +250,39 @@ fn grab(device: &File, wanted: bool) -> bool {
     unsafe { libc::ioctl(device.as_raw_fd(), EVIOCGRAB as _, wanted as libc::c_int) == 0 }
 }
 
+/// Hands `events` to the TV as if they came from the remote on `slot`.
+fn feed(mut slot: &File, events: &[u8]) -> io::Result<()> {
+    slot.write_all(events)?;
+    // They come straight back to us as that slot's input; drop them, so that anything read
+    // from it later is known to be a real remote.
+    while slot.read(&mut [0; EVENT_SIZE * 64]).is_ok() {}
+    Ok(())
+}
+
+/// Restarts the program if the main loop stops turning, which also lets go of the remote: a
+/// fault here must never leave the TV without it.
+fn watch_main_loop(turns: Arc<AtomicU64>) {
+    thread::spawn(move || {
+        let mut seen = (turns.load(Ordering::Relaxed), Instant::now());
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let now = turns.load(Ordering::Relaxed);
+            if now != seen.0 {
+                seen = (now, Instant::now());
+            } else if seen.1.elapsed() > STUCK_AFTER {
+                log!("stuck, restarting");
+                let watcher = WATCHER.load(Ordering::Relaxed);
+                unsafe { libc::kill(watcher, libc::SIGTERM) };
+                unsafe { libc::waitpid(watcher, std::ptr::null_mut(), 0) };
+                let mut args = std::env::args_os();
+                let failed = Command::new("/proc/self/exe").arg0(args.next().unwrap_or_default()).args(args).exec();
+                log!("cannot restart: {failed}");
+                std::process::exit(1);
+            }
+        }
+    });
+}
+
 /// Follows which apps the TV has in the foreground, one JSON line per change on its stdout.
 fn watch_foreground() -> io::Result<Child> {
     let mut command = Command::new("luna-send");
@@ -258,7 +297,9 @@ fn watch_foreground() -> io::Result<Child> {
             Ok(())
         })
     };
-    command.spawn()
+    let child = command.spawn()?;
+    WATCHER.store(child.id() as i32, Ordering::Relaxed);
+    Ok(child)
 }
 
 fn app_ids(line: &str) -> Vec<&str> {
@@ -276,18 +317,17 @@ fn main() -> io::Result<()> {
     let key_file = args.get(2).map(PathBuf::from).unwrap_or(std::env::current_exe()?.with_file_name("adbkey"));
     let key = Arc::new(adb::load_or_create_key(&key_file)?);
 
-    // The TV has one such device per remote slot and its compositor reads them all, so the
-    // second slot serves as the way back in for the events of the others we take over.
-    let mut nodes = pointer_devices()?;
-    if nodes.len() < 2 {
-        return Err(io::Error::new(io::ErrorKind::NotFound, format!("expected at least two Magic Remote input devices, found {nodes:?}")));
-    }
-    let mut sink = OpenOptions::new().write(true).open(nodes.remove(1))?;
-    let sources = nodes
+    // The TV has one such device per remote slot and its compositor reads them all. We hold the
+    // one the remote is on, and use another as the way back in for what the TV should still see.
+    let slots = pointer_devices()?
         .iter()
-        .map(|node| OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(node))
+        .map(|node| OpenOptions::new().read(true).write(true).custom_flags(libc::O_NONBLOCK).open(node))
         .collect::<io::Result<Vec<File>>>()?;
-    let mut grabbed = vec![false; sources.len()];
+    if slots.len() < 2 {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "expected at least two Magic Remote input devices"));
+    }
+    let (mut remote, mut sink) = (0, 1);
+    let mut grabbed = false;
 
     let mut pointer = Pointer {
         address,
@@ -299,7 +339,7 @@ fn main() -> io::Result<()> {
         retry_at: Instant::now(),
         pressed: false,
         position: (0, 0),
-        remote_size: (axis_maximum(&sources[0], ABS_X), axis_maximum(&sources[0], ABS_Y)),
+        remote_size: (axis_maximum(&slots[0], ABS_X), axis_maximum(&slots[0], ABS_Y)),
         box_size: (1920, 1080),
     };
 
@@ -310,17 +350,19 @@ fn main() -> io::Result<()> {
     let mut wheel_stepped = Instant::now();
     let mut home_at: Option<Instant> = None; // when Home went down, while undecided between box and TV
 
+    let turns = Arc::new(AtomicU64::new(0));
+    watch_main_loop(turns.clone());
+
     loop {
+        turns.fetch_add(1, Ordering::Relaxed);
         if active {
             pointer.connect();
-            for (device, held) in sources.iter().zip(&mut grabbed) {
-                // A previous instance may still be exiting with the grab; this retries until it is gone.
-                *held = *held || grab(device, true);
-            }
+            // A previous instance may still be exiting with the grab; this retries until it is gone.
+            grabbed = grabbed || grab(&slots[remote], true);
         }
 
         let luna_fd = luna.stdout.as_ref().unwrap().as_raw_fd();
-        let mut fds: Vec<RawFd> = sources.iter().map(|device| device.as_raw_fd()).collect();
+        let mut fds: Vec<RawFd> = slots.iter().map(|slot| slot.as_raw_fd()).collect();
         fds.push(luna_fd);
         fds.extend(pointer.adb.as_ref().map(|adb| adb.as_raw_fd()));
         let mut polled: Vec<libc::pollfd> = fds.iter().map(|&fd| libc::pollfd { fd, events: libc::POLLIN, revents: 0 }).collect();
@@ -353,9 +395,7 @@ fn main() -> io::Result<()> {
                     log!("box input {} foreground", if active { "in" } else { "left" });
                     (wheel_left, home_at) = (0.0, None);
                     if !active {
-                        for (device, held) in sources.iter().zip(&mut grabbed) {
-                            *held = *held && !grab(device, false);
-                        }
+                        grabbed = grabbed && !grab(&slots[remote], false);
                         pointer.disconnect();
                     }
                 }
@@ -365,12 +405,24 @@ fn main() -> io::Result<()> {
         let box_readable = pointer.adb.as_ref().is_some_and(|adb| readable(adb.as_raw_fd()));
         pointer.pump(box_readable);
 
-        for mut device in &sources {
-            if !readable(device.as_raw_fd()) {
+        for (index, mut slot) in slots.iter().enumerate() {
+            if !readable(slot.as_raw_fd()) {
                 continue;
             }
             let mut data = [0; EVENT_SIZE * 64];
-            let Ok(read) = device.read(&mut data) else { continue };
+            let Ok(read) = slot.read(&mut data) else { continue };
+            if index != remote {
+                // The remote in use is on another slot than we thought: hold that one instead.
+                if grabbed {
+                    grab(&slots[remote], false);
+                }
+                if index == sink {
+                    sink = remote;
+                }
+                remote = index;
+                grabbed = active && grab(slot, true);
+                log!("remote is on slot {remote}");
+            }
             let mut passed = Vec::new();
             let mut moved = false;
             for raw in data[..read].chunks_exact(EVENT_SIZE) {
@@ -409,7 +461,7 @@ fn main() -> io::Result<()> {
                 }
             }
             if active && !passed.is_empty() {
-                sink.write_all(&passed)?;
+                feed(&slots[sink], &passed)?;
             }
             if active && moved {
                 pointer.point();
@@ -419,7 +471,7 @@ fn main() -> io::Result<()> {
         if home_at.is_some_and(|pressed| now - pressed > HOME_HOLD) {
             home_at = None;
             for value in [1, 0] {
-                sink.write_all(&[event(EV_KEY, LG_HOME, value), event(0, 0, 0)].concat())?;
+                feed(&slots[sink], &[event(EV_KEY, LG_HOME, value), event(0, 0, 0)].concat())?;
             }
         }
         if wheel_left != 0.0 {

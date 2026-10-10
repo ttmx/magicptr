@@ -1,8 +1,8 @@
 # Replay Magic Remote input on the TV (python 2.7), to test magicptr without the remote.
-# Writes to /dev/input/event3, the first remote slot on an LG C9; adjust for other models.
-# Usage: fakeremote.py move X Y | click X Y | wheel X Y TICKS
+# Writes to /dev/input/event3, the first remote slot on an LG C9, unless DEVICE names another.
+# Usage: [DEVICE=/dev/input/eventN] fakeremote.py move X Y | click X Y | wheel X Y TICKS
 import os, struct, sys, time
-fd = os.open("/dev/input/event3", os.O_WRONLY)
+fd = os.open(os.environ.get("DEVICE", "/dev/input/event3"), os.O_WRONLY)
 def ev(t, c, v):
     os.write(fd, struct.pack("IIHHi", 0, 0, t, c, v))
 def syn():

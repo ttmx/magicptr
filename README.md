@@ -55,8 +55,9 @@ The log is at `/tmp/magicptr.log` on the TV:
 - `expected at least two Magic Remote input devices` — this TV exposes the remote
   differently; please open an issue with the output of `cat /proc/bus/input/devices`.
 
-If the remote ever stops responding on the box's input, switch input or restart the TV:
-magicptr only holds the remote while it is running and the box's input is in front.
+magicptr only holds the remote while the box's input is in front, and restarts itself,
+letting go of the remote, if it ever stalls. Should the remote stop responding on the
+box's input anyway, switch input or restart the TV.
 
 ## Uninstall
 
@@ -80,7 +81,7 @@ it:
 
 1. takes exclusive hold of the Magic Remote's input device, so the TV does not react to
    clicks itself, and passes everything except the click, the wheel and Home back to the
-   TV through the sibling device of the second remote slot;
+   TV through the device of another remote slot;
 2. connects to the box with its own small ADB client, copies a helper there
    (`helper/MagicPtr.java`, about 100 lines) and runs it with `app_process`;
 3. sends the helper one line per pointer event, which the helper injects as mouse input
